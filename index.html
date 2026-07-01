@@ -616,13 +616,7 @@ function reportByUser(){
 }
 function rangeLabelText(){
   const [s,e] = reportDateRange();
-  if(reportRange==='all') return 'All time';
-  if(reportRange==='lastmonth'){
-    const ms=new Date(new Date().getFullYear(),new Date().getMonth()-1,1);
-    const me=new Date(new Date().getFullYear(),new Date().getMonth(),0);
-    const fmt=(d)=>{ const [y,mo,da]=fmtDate(d).split('-'); return da+'/'+mo+'/'+y; };
-    return fmt(fmtDate(ms))+' - '+fmt(fmtDate(me));
-  }
+  if(s==='0000-01-01') return 'All time';
   const fmt=(d)=>{ const [y,mo,da]=d.split('-'); return da+'/'+mo+'/'+y; };
   return fmt(s)+' - '+fmt(e);
 }
@@ -1274,7 +1268,7 @@ function renderReports(){
     </select>` : '';
   return `
   <div class="card">
-    <div class="card-head"><h2>Reports <span style="font-family:'JetBrains Mono';font-size:12px;font-weight:400;color:var(--text-faint);margin-left:8px;">${rangeLabelText()}</span></h2><div class="range-pills">${pills}${adminFilter}</div></div>
+    <div class="card-head"><h2>Reports <span style="font-family:'JetBrains Mono';font-size:12px;font-weight:400;color:var(--text-faint);margin-left:8px;">${(()=>{try{return rangeLabelText();}catch(e){return '';}})()}</span></h2><div class="range-pills">${pills}${adminFilter}</div></div>
     <div class="stat-grid">
       <div class="stat-box"><div class="label">Total tracked</div><div class="value">${hoursToHM(total)}</div></div>
       <div class="stat-box"><div class="label">Entries</div><div class="value">${re.length}</div></div>
@@ -1403,7 +1397,7 @@ function renderTeam(){
   const pills = ranges.map(r=>`<button class="pill ${reportRange===r.key?'active':''}" data-range="${r.key}">${r.label}</button>`).join('');
   return `
   <div class="card">
-    <div class="card-head"><h2>Team hours <span style="font-family:'JetBrains Mono';font-size:12px;font-weight:400;color:var(--text-faint);margin-left:8px;">${rangeLabelText()}</span></h2><div class="range-pills">${pills}</div></div>
+    <div class="card-head"><h2>Team hours <span style="font-family:'JetBrains Mono';font-size:12px;font-weight:400;color:var(--text-faint);margin-left:8px;">${(()=>{try{return rangeLabelText();}catch(e){return '';}})()}</span></h2><div class="range-pills">${pills}</div></div>
     <div class="stat-grid">
       <div class="stat-box"><div class="label">Team total</div><div class="value">${hoursToHM(total)}</div></div>
       <div class="stat-box"><div class="label">People logging time</div><div class="value">${byUser.length}</div></div>
