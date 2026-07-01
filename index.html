@@ -110,6 +110,55 @@
   .bar-amt{font-family:'JetBrains Mono';font-size:12.5px;color:var(--text-dim);min-width:74px;text-align:right;}
   .export-row{display:flex;gap:8px;flex-wrap:wrap;}
 
+  /* ---------- Daily log view ---------- */
+  .day-group{margin-bottom:6px;}
+  .day-header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:8px 12px;background:var(--surface-3);border-radius:8px;
+    margin-bottom:2px;
+  }
+  .day-header.is-today .day-label{color:var(--accent);}
+  .day-label{font-family:'Space Grotesk';font-size:13px;font-weight:600;color:var(--text);}
+  .day-total{font-family:'JetBrains Mono';font-size:12.5px;color:var(--text-dim);}
+
+  .entry-log-row{
+    display:flex;align-items:center;gap:10px;
+    background:var(--surface);border:1px solid var(--border);
+    border-radius:8px;padding:12px 14px;margin-bottom:3px;
+    transition:border-color .15s;
+  }
+  .entry-log-row:hover{border-color:var(--border-strong);}
+  .entry-desc-col{flex:1;min-width:0;}
+  .entry-desc-text{font-size:13.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .entry-proj-col{display:flex;align-items:center;gap:6px;min-width:0;max-width:320px;flex:1;}
+  .entry-proj-name{font-size:12px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .entry-time-col{font-family:'JetBrains Mono';font-size:12px;color:var(--text-dim);min-width:130px;text-align:center;}
+  .entry-dur-col{font-family:'JetBrains Mono';font-size:14px;font-weight:600;color:var(--text);min-width:72px;text-align:right;}
+  .entry-actions{display:flex;gap:2px;flex-shrink:0;}
+
+  .entry-edit-row{
+    background:var(--surface-2);border:1px solid var(--accent-dim);
+    border-radius:8px;padding:14px 16px;margin-bottom:3px;
+    display:flex;flex-direction:column;gap:10px;
+  }
+  .edit-row-top{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  .edit-row-bottom{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .edit-field{display:flex;flex-direction:column;gap:4px;}
+  .edit-field label{font-size:10.5px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.4px;}
+  .edit-input{background:var(--surface-3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font-size:13px;font-family:'Inter';outline:none;}
+  .edit-input:focus{border-color:var(--accent-dim);}
+  .edit-input.time{font-family:'JetBrains Mono';width:88px;}
+  .edit-input.date-in{width:140px;}
+  .edit-row-actions{display:flex;gap:8px;margin-top:4px;}
+
+  .add-entry-form{
+    background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
+    padding:14px 16px;margin-bottom:3px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;
+  }
+  .add-entry-btn-row{
+    padding:6px 4px;
+  }
+
   .task-row td{border-top:none;padding-top:0;padding-bottom:14px;}
   .task-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
   .task-chip{display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--text-dim);font-size:11.5px;padding:4px 6px 4px 10px;border-radius:14px;}
@@ -162,6 +211,9 @@ let loginNote = '';
 let loginNoteType = '';
 let selectedTemplateId = null;
 let teamUserFilter = 'all';
+let editingEntryId = null;   // entry being edited inline
+let addingToDate = null;      // date string for new-entry form
+let editForm = {};            // live field values while editing
 
 function uid(){ return Math.random().toString(36).slice(2,10); }
 function mondayOf(d){ const x=new Date(d); const day=(x.getDay()+6)%7; x.setDate(x.getDate()-day); x.setHours(0,0,0,0); return x; }
@@ -212,7 +264,7 @@ async function loadProjects(){
     projects = (r.data||[]).map(p=>({ id:p.id, name:p.name, client:p.client||'', color:p.color, tasks:p.tasks||[], owner_id:p.owner_id }));
   }
 }
-function mapEntry(r){ return { id:r.id, user_id:r.user_id, projectId:r.project_id, description:r.description||'', date:r.date, hours:r.hours }; }
+function mapEntry(r){ return { id:r.id, user_id:r.user_id, projectId:r.project_id, description:r.description||'', date:r.date, hours:r.hours, start_time:r.start_time||null, end_time:r.end_time||null }; }
 async function loadEntries(){
   let q = sb.from('entries').select('*');
   if(!profile.is_admin) q = q.eq('user_id', session.user.id);
@@ -278,9 +330,24 @@ function startTimer(projectId, description){
 }
 async function stopTimer(){
   if(!timer) return;
-  const elapsedHours = (Date.now()-timer.startedAt)/3600000;
+  const now = new Date();
+  const startDate = new Date(timer.startedAt);
+  const elapsedHours = (now - startDate)/3600000;
   if(elapsedHours > 0.0005){
-    await addOrMergeEntry(timer.projectId, timer.description, todayStr(), elapsedHours);
+    const start_time = String(startDate.getHours()).padStart(2,'0')+':'+String(startDate.getMinutes()).padStart(2,'0');
+    const end_time = String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+    const dateStr = fmtDate(startDate);
+    const row = {
+      user_id: session.user.id,
+      project_id: timer.projectId,
+      description: timer.description||'',
+      date: dateStr,
+      start_time,
+      end_time,
+      hours: Math.round(elapsedHours*100)/100,
+    };
+    const { data } = await sb.from('entries').insert(row).select().maybeSingle();
+    if(data) entries.push(mapEntry(data));
   }
   timer = null;
   sessionStorage.removeItem('phtt_timer');
@@ -339,13 +406,46 @@ async function setCellHours(row, dateStr, value){
   draftRows = draftRows.filter(d=>d.key!==row.key);
   render();
 }
-async function deleteRow(row){
-  const days = weekDates().map(fmtDate);
-  const toDelete = entries.filter(e=>e.user_id===session.user.id && e.projectId===row.projectId && e.description===row.description && days.includes(e.date));
-  for(const e of toDelete){ await sb.from('entries').delete().eq('id', e.id); }
-  const ids = new Set(toDelete.map(e=>e.id));
-  entries = entries.filter(e=>!ids.has(e.id));
-  draftRows = draftRows.filter(d=>d.key!==row.key);
+async function saveEntryEdit(id, fields){
+  const h = fields.start_time && fields.end_time
+    ? (hoursFromTimes(fields.start_time, fields.end_time) || parseFloat(fields.hours) || 0)
+    : (parseFloat(fields.hours) || 0);
+  const update = {
+    project_id: fields.projectId,
+    description: fields.description,
+    date: fields.date,
+    start_time: fields.start_time || null,
+    end_time: fields.end_time || null,
+    hours: Math.round(h*100)/100,
+  };
+  await sb.from('entries').update(update).eq('id', id);
+  const e = entries.find(x=>x.id===id);
+  if(e){ Object.assign(e, mapEntry({...update, id, user_id:e.user_id, project_id:update.project_id})); }
+  editingEntryId = null; editForm = {};
+  render();
+}
+async function addNewEntry(dateStr, fields){
+  const h = fields.start_time && fields.end_time
+    ? (hoursFromTimes(fields.start_time, fields.end_time) || parseFloat(fields.hours) || 0)
+    : (parseFloat(fields.hours) || 0);
+  if(!h && !fields.description){ return; }
+  const row = {
+    user_id: session.user.id,
+    project_id: fields.projectId || (projects[0]&&projects[0].id),
+    description: fields.description || '',
+    date: dateStr,
+    start_time: fields.start_time || null,
+    end_time: fields.end_time || null,
+    hours: Math.round(h*100)/100 || 0,
+  };
+  const { data } = await sb.from('entries').insert(row).select().maybeSingle();
+  if(data) entries.push(mapEntry(data));
+  addingToDate = null; editForm = {};
+  render();
+}
+async function deleteEntry(id){
+  await sb.from('entries').delete().eq('id', id);
+  entries = entries.filter(e=>e.id!==id);
   render();
 }
 
@@ -652,56 +752,163 @@ function elapsedReadout(){
 }
 function updateTimerReadout(){ const el=document.getElementById('timerReadout'); if(el) el.textContent=elapsedReadout(); }
 
+function hoursFromTimes(start, end){
+  if(!start || !end) return null;
+  const [sh,sm] = start.split(':').map(Number);
+  const [eh,em] = end.split(':').map(Number);
+  let mins = (eh*60+em) - (sh*60+sm);
+  if(mins < 0) mins += 24*60; // overnight
+  return Math.round((mins/60)*100)/100;
+}
+function isOvernight(start, end){
+  if(!start||!end) return false;
+  const [sh,sm]=start.split(':').map(Number), [eh,em]=end.split(':').map(Number);
+  return (eh*60+em) < (sh*60+sm);
+}
+
+function renderEntryRow(e){
+  const proj = projectById(e.projectId);
+  const timeStr = (e.start_time && e.end_time)
+    ? `${e.start_time} – ${e.end_time}${isOvernight(e.start_time,e.end_time)?'<sup style="font-size:9px;color:var(--accent)"> +1</sup>':''}`
+    : '–';
+  const tasks = (proj||{}).tasks||[];
+  return `
+  <div class="entry-log-row">
+    <div class="entry-desc-col">
+      <div class="entry-desc-text">${escapeHtml(e.description||'No description')}</div>
+    </div>
+    <div class="entry-proj-col">
+      <span class="proj-dot" style="background:${proj?proj.color:'#888'}"></span>
+      <span class="entry-proj-name">${escapeHtml(proj?proj.name:'Unknown')}${proj&&proj.client?' <span style="color:var(--text-faint)">— '+escapeHtml(proj.client)+'</span>':''}</span>
+    </div>
+    <div class="entry-time-col">${timeStr}</div>
+    <div class="entry-dur-col">${fmtHHMM(e.hours)}</div>
+    <div class="entry-actions">
+      <button class="btn ghost" data-editentry="${e.id}" title="Edit">✎</button>
+      <button class="btn ghost" data-delentry="${e.id}" title="Delete">✕</button>
+    </div>
+  </div>`;
+}
+
+function renderEntryEditRow(e){
+  const proj = projectById(e.projectId);
+  const tasks = (projectById(editForm.projectId||e.projectId)||{}).tasks||[];
+  const projOptions = projects.map(p=>`<option value="${p.id}" ${(editForm.projectId||e.projectId)===p.id?'selected':''}>${escapeHtml(p.name)}</option>`).join('');
+  return `
+  <div class="entry-edit-row">
+    <div class="edit-row-top">
+      <div class="edit-field" style="flex:1;min-width:160px;">
+        <label>Description / Task</label>
+        <input class="edit-input" id="ef-desc" list="ef-tasks" placeholder="Task description" value="${escapeHtml(editForm.description!=null?editForm.description:e.description)}"/>
+        <datalist id="ef-tasks">${tasks.map(t=>`<option value="${escapeHtml(t.name)}"></option>`).join('')}</datalist>
+      </div>
+      <div class="edit-field" style="min-width:160px;">
+        <label>Project</label>
+        <select class="edit-input" id="ef-project">${projOptions}</select>
+      </div>
+    </div>
+    <div class="edit-row-bottom">
+      <div class="edit-field">
+        <label>Date</label>
+        <input class="edit-input date-in" id="ef-date" type="date" value="${editForm.date||e.date}"/>
+      </div>
+      <div class="edit-field">
+        <label>Start</label>
+        <input class="edit-input time" id="ef-start" type="time" value="${editForm.start_time!=null?editForm.start_time:(e.start_time||'')}"/>
+      </div>
+      <div class="edit-field">
+        <label>End</label>
+        <input class="edit-input time" id="ef-end" type="time" value="${editForm.end_time!=null?editForm.end_time:(e.end_time||'')}"/>
+      </div>
+      <div class="edit-field">
+        <label>Hours (manual)</label>
+        <input class="edit-input time" id="ef-hours" type="number" min="0" step="0.25" placeholder="e.g. 2.5" value="${editForm.hours!=null?editForm.hours:(e.hours||'')}"/>
+      </div>
+      <div class="edit-row-actions">
+        <button class="btn primary" id="ef-save" data-id="${e.id}">Save</button>
+        <button class="btn" id="ef-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderAddEntryForm(dateStr){
+  const projOptions = projects.map(p=>`<option value="${p.id}" ${(editForm.projectId||'')===p.id?'selected':''}>${escapeHtml(p.name)}</option>`).join('');
+  const tasks = (projectById(editForm.projectId||projects[0]?.id)||{}).tasks||[];
+  return `
+  <div class="add-entry-form">
+    <div class="edit-field" style="flex:1;min-width:160px;">
+      <label>Description / Task</label>
+      <input class="edit-input" id="nef-desc" list="nef-tasks" placeholder="Task description" value="${escapeHtml(editForm.description||'')}"/>
+      <datalist id="nef-tasks">${tasks.map(t=>`<option value="${escapeHtml(t.name)}"></option>`).join('')}</datalist>
+    </div>
+    <div class="edit-field" style="min-width:150px;">
+      <label>Project</label>
+      <select class="edit-input" id="nef-project">${projOptions}</select>
+    </div>
+    <div class="edit-field">
+      <label>Start</label>
+      <input class="edit-input time" id="nef-start" type="time" value="${editForm.start_time||''}"/>
+    </div>
+    <div class="edit-field">
+      <label>End</label>
+      <input class="edit-input time" id="nef-end" type="time" value="${editForm.end_time||''}"/>
+    </div>
+    <div class="edit-field">
+      <label>Hours</label>
+      <input class="edit-input time" id="nef-hours" type="number" min="0" step="0.25" placeholder="or manual" value="${editForm.hours||''}"/>
+    </div>
+    <div class="edit-row-actions" style="align-self:flex-end;">
+      <button class="btn primary" id="nef-save" data-date="${dateStr}">Add</button>
+      <button class="btn" id="nef-cancel">Cancel</button>
+    </div>
+  </div>`;
+}
+
+
 function renderTimesheet(){
   const days = weekDates();
   const today = todayStr();
-  const rows = groupRowsForWeek();
-  const dayHeaders = days.map((d,i)=>{
-    const ds=fmtDate(d); const isToday=ds===today;
-    return `<th class="${isToday?'today-head':''}"><div class="day-head"><span class="dow">${DOW[i]}</span><span class="dom">${d.getDate()}</span></div></th>`;
-  }).join('');
+  const we = weekEntries();
+  const byDate = {};
+  days.forEach(d=>{ byDate[fmtDate(d)]=[]; });
+  we.forEach(e=>{ if(byDate[e.date]) byDate[e.date].push(e); });
 
-  let bodyRows='';
-  if(rows.length===0){
-    bodyRows = `<tr><td colspan="9"><div class="empty-state">No hours logged this week yet. Add a row to start your timesheet.</div></td></tr>`;
-  }else{
-    rows.forEach(row=>{
-      const proj = projectById(row.projectId) || projects[0];
-      let total=0;
-      const cells = days.map(d=>{
-        const ds=fmtDate(d); const val=row.byDate[ds]||0; total+=val; const isToday=ds===today;
-        return `<td class="cell ${isToday?'today':''}"><input type="number" min="0" step="0.25" data-row="${row.key}" data-date="${ds}" value="${val?fmtHours(val):''}" placeholder="–"/></td>`;
-      }).join('');
-      const isDraft = row.draft;
-      const rowTasks = (projectById(row.projectId)||{}).tasks || [];
-      const projSelect = isDraft
-        ? `<select class="row-select" data-draft="${row.key}" data-field="projectId">${projects.map(p=>`<option value="${p.id}" ${p.id===row.projectId?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}</select>`
-        : `<span class="row-proj">${escapeHtml(proj?proj.name:'')}</span>`;
-      const descField = isDraft
-        ? `<input class="row-desc-input" data-draft="${row.key}" data-field="description" placeholder="Pick a task or type your own" value="${escapeHtml(row.description)}" list="tasks-${row.key}"/>
-           <datalist id="tasks-${row.key}">${rowTasks.map(t=>`<option value="${escapeHtml(t.name)}"></option>`).join('')}</datalist>`
-        : `<span class="row-desc" title="${escapeHtml(row.description)}">${escapeHtml(row.description)||'<span style=\"color:var(--text-faint)\">No description</span>'}</span>`;
-      bodyRows += `
-      <tr class="entry-row">
-        <td><div class="row-label-cell"><span class="proj-dot" style="background:${proj?proj.color:'#888'}"></span>
-          <div class="row-text">${isDraft?projSelect:''}${descField}</div>
-        </div></td>
-        ${cells}
-        <td class="row-total">${total?fmtHours(total)+'h':''}</td>
-        <td class="row-del"><button class="btn ghost" data-delrow="${row.key}" aria-label="Delete row">✕</button></td>
-      </tr>`;
-    });
-  }
+  const grandTotal = we.reduce((a,b)=>a+b.hours,0);
 
-  let dayTotals = days.map(()=>0);
-  rows.forEach(row=>{ days.forEach((d,i)=>{ dayTotals[i]+=(row.byDate[fmtDate(d)]||0); }); });
-  const grandTotal = dayTotals.reduce((a,b)=>a+b,0);
-  const totalsCells = dayTotals.map((t,i)=>{ const isToday=fmtDate(days[i])===today; return `<td class="row-total ${isToday?'cell today':''}">${t?fmtHours(t):'–'}</td>`; }).join('');
+  let dayHtml = '';
+  days.forEach((d,i)=>{
+    const ds = fmtDate(d);
+    const dayEntries = byDate[ds]||[];
+    const dayTotal = dayEntries.reduce((a,b)=>a+b.hours,0);
+    const isToday = ds===today;
+
+    dayHtml += `<div class="day-group">
+      <div class="day-header ${isToday?'is-today':''}">
+        <span class="day-label">${DOW[i]}, ${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>
+        <span class="day-total">${dayTotal?'Total: '+fmtHHMM(dayTotal):''}</span>
+      </div>`;
+
+    if(addingToDate===ds) dayHtml += renderAddEntryForm(ds);
+
+    if(dayEntries.length){
+      dayEntries.forEach(e=>{
+        dayHtml += editingEntryId===e.id ? renderEntryEditRow(e) : renderEntryRow(e);
+      });
+    } else if(addingToDate!==ds){
+      dayHtml += `<div style="padding:10px 12px;font-size:12.5px;color:var(--text-faint);">No entries — <button class="btn ghost" style="font-size:12.5px;padding:0;" data-adddate="${ds}">+ Add entry</button></div>`;
+    }
+
+    if(dayEntries.length && addingToDate!==ds){
+      dayHtml += `<div class="add-entry-btn-row"><button class="btn ghost" data-adddate="${ds}">+ Add entry</button></div>`;
+    }
+    dayHtml += '</div>';
+  });
 
   return `
   <div class="card">
     <div class="card-head">
-      <h2>Your weekly timesheet</h2>
+      <h2>Your timesheet <span style="font-family:'JetBrains Mono';font-size:13px;font-weight:400;color:var(--text-faint);margin-left:10px;">${grandTotal?fmtHHMM(grandTotal)+' this week':''}</span></h2>
       <div class="week-nav">
         <button class="nav-btn" id="weekPrev">‹</button>
         <span class="week-label">${formatWeekLabel(days)}</span>
@@ -709,14 +916,8 @@ function renderTimesheet(){
         <button class="btn" id="weekToday">This week</button>
       </div>
     </div>
-    <table class="sheet">
-      <thead><tr><th class="row-label">Project / description</th>${dayHeaders}<th>Total</th><th></th></tr></thead>
-      <tbody>${bodyRows}</tbody>
-      <tfoot><tr class="totals-row"><td>Daily total</td>${totalsCells}<td class="row-total">${grandTotal?fmtHours(grandTotal)+'h':'0h'}</td><td></td></tr></tfoot>
-    </table>
-    <div style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-      <button class="btn primary" id="addRow">+ Add row</button>
-      <span style="width:1px;height:20px;background:var(--border);"></span>
+    ${dayHtml}
+    <div style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:14px;">
       <select class="row-select" id="templateSelect" style="max-width:180px;">
         <option value="">Saved templates…</option>
         ${templates.map(t=>`<option value="${t.id}" ${selectedTemplateId===t.id?'selected':''}>${escapeHtml(t.name)}</option>`).join('')}
@@ -873,38 +1074,69 @@ function attachHandlers(){
 
   if(activeTab==='timesheet'){
     const prev=document.getElementById('weekPrev'), next=document.getElementById('weekNext'), todayBtn=document.getElementById('weekToday');
-    if(prev) prev.onclick=()=>{ weekStart=addDays(weekStart,-7); draftRows=[]; render(); };
-    if(next) next.onclick=()=>{ weekStart=addDays(weekStart,7); draftRows=[]; render(); };
-    if(todayBtn) todayBtn.onclick=()=>{ weekStart=mondayOf(new Date()); draftRows=[]; render(); };
+    if(prev) prev.onclick=()=>{ weekStart=addDays(weekStart,-7); editingEntryId=null; addingToDate=null; editForm={}; render(); };
+    if(next) next.onclick=()=>{ weekStart=addDays(weekStart,7); editingEntryId=null; addingToDate=null; editForm={}; render(); };
+    if(todayBtn) todayBtn.onclick=()=>{ weekStart=mondayOf(new Date()); editingEntryId=null; addingToDate=null; editForm={}; render(); };
 
-    const addRowBtn=document.getElementById('addRow');
-    if(addRowBtn) addRowBtn.onclick=()=>{ draftRows.push({key:'draft-'+uid(), projectId:projects[0]?projects[0].id:null, description:''}); render(); };
-
-    document.querySelectorAll('.cell input').forEach(inp=>{
-      inp.addEventListener('change',(e)=>{
-        const row = groupRowsForWeek().find(r=>r.key===e.target.dataset.row);
-        if(row) setCellHours(row, e.target.dataset.date, e.target.value);
-      });
-    });
-    document.querySelectorAll('[data-delrow]').forEach(btn=>{
-      btn.onclick=()=>{ const row=groupRowsForWeek().find(r=>r.key===btn.dataset.delrow); if(row) deleteRow(row); };
-    });
-    document.querySelectorAll('[data-draft]').forEach(el=>{
-      const evt = el.tagName==='SELECT' ? 'change' : 'input';
-      el.addEventListener(evt, (e)=>{
-        const key=e.target.dataset.draft, field=e.target.dataset.field;
-        const d = draftRows.find(x=>x.key===key);
-        if(d) d[field] = e.target.value;
-        if(field==='projectId'){
-          const dl = document.getElementById('tasks-'+key);
-          if(dl){ const tasks=(projectById(e.target.value)||{}).tasks||[]; dl.innerHTML = tasks.map(t=>`<option value="${escapeHtml(t.name)}"></option>`).join(''); }
-          const descInput = document.querySelector('[data-draft="'+key+'"][data-field="description"]');
-          if(descInput) descInput.value = '';
-          if(d) d.description = '';
-        }
-      });
+    // Add entry buttons
+    document.querySelectorAll('[data-adddate]').forEach(btn=>{
+      btn.onclick=()=>{ addingToDate=btn.dataset.adddate; editingEntryId=null; editForm={ projectId: projects[0]?.id }; render(); };
     });
 
+    // New entry form
+    const nefProject = document.getElementById('nef-project');
+    if(nefProject) nefProject.addEventListener('change', e=>{
+      editForm.projectId = e.target.value;
+      const dl = document.getElementById('nef-tasks');
+      if(dl){ const tasks=(projectById(e.target.value)||{}).tasks||[]; dl.innerHTML=tasks.map(t=>`<option value="${escapeHtml(t.name)}"></option>`).join(''); }
+    });
+    const nefSave = document.getElementById('nef-save');
+    if(nefSave) nefSave.onclick=()=>{
+      const fields = {
+        description: document.getElementById('nef-desc')?.value||'',
+        projectId: document.getElementById('nef-project')?.value||(projects[0]?.id),
+        start_time: document.getElementById('nef-start')?.value||null,
+        end_time: document.getElementById('nef-end')?.value||null,
+        hours: document.getElementById('nef-hours')?.value||null,
+      };
+      addNewEntry(nefSave.dataset.date, fields);
+    };
+    document.getElementById('nef-cancel')?.addEventListener('click', ()=>{ addingToDate=null; editForm={}; render(); });
+
+    // Edit entry buttons
+    document.querySelectorAll('[data-editentry]').forEach(btn=>{
+      btn.onclick=()=>{ editingEntryId=btn.dataset.editentry; addingToDate=null; editForm={}; render(); };
+    });
+
+    // Edit entry form
+    const efProject = document.getElementById('ef-project');
+    if(efProject) efProject.addEventListener('change', e=>{
+      editForm.projectId = e.target.value;
+      const dl = document.getElementById('ef-tasks');
+      if(dl){ const tasks=(projectById(e.target.value)||{}).tasks||[]; dl.innerHTML=tasks.map(t=>`<option value="${escapeHtml(t.name)}"></option>`).join(''); }
+    });
+    const efSave = document.getElementById('ef-save');
+    if(efSave) efSave.onclick=()=>{
+      const fields = {
+        description: document.getElementById('ef-desc')?.value||'',
+        projectId: document.getElementById('ef-project')?.value,
+        date: document.getElementById('ef-date')?.value,
+        start_time: document.getElementById('ef-start')?.value||null,
+        end_time: document.getElementById('ef-end')?.value||null,
+        hours: document.getElementById('ef-hours')?.value||null,
+      };
+      saveEntryEdit(efSave.dataset.id, fields);
+    };
+    document.getElementById('ef-cancel')?.addEventListener('click', ()=>{ editingEntryId=null; editForm={}; render(); });
+
+    // Delete entry
+    document.querySelectorAll('[data-delentry]').forEach(btn=>{
+      btn.onclick=()=>{
+        if(confirm('Delete this entry?')) deleteEntry(btn.dataset.delentry);
+      };
+    });
+
+    // Templates
     const tplSelect=document.getElementById('templateSelect');
     if(tplSelect) tplSelect.onchange=(e)=>{ selectedTemplateId=e.target.value||null; };
     const applyWeekBtn=document.getElementById('applyWeekBtn');
@@ -917,7 +1149,7 @@ function attachHandlers(){
     if(applyMonthBtn) applyMonthBtn.onclick=()=>{
       const tpl=templates.find(t=>t.id===selectedTemplateId);
       if(!tpl){ alert('Pick a saved template first.'); return; }
-      if(confirm('Apply "'+tpl.name+'" to every week in this month? Existing hours on matching rows/days will be overwritten.')) applyTemplateToCurrentMonth(tpl);
+      if(confirm('Apply "'+tpl.name+'" to every week in this month?')) applyTemplateToCurrentMonth(tpl);
     };
     const deleteTplBtn=document.getElementById('deleteTplBtn');
     if(deleteTplBtn) deleteTplBtn.onclick=()=>{
@@ -929,7 +1161,7 @@ function attachHandlers(){
     if(saveTplBtn) saveTplBtn.onclick=()=>{
       const name=prompt('Name this template (e.g. "Standard work week"):');
       if(name===null) return;
-      saveCurrentWeekAsTemplate(name.trim()).then(ok=>{ if(!ok) alert('Add some hours to this week before saving it as a template.'); render(); });
+      saveCurrentWeekAsTemplate(name.trim()).then(ok=>{ if(!ok) alert('Add some hours to this week first.'); render(); });
     };
   }
 
