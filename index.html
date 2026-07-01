@@ -520,13 +520,16 @@ async function saveCurrentWeekAsTemplate(name){
   const rows = weekEntries().filter(e=>e.user_id===session.user.id);
   const days = weekDates().map(fmtDate);
   if(!rows.length) return false;
-  // group by project+desc, store hoursByDow
   const map = new Map();
   rows.forEach(e=>{
     const key=e.projectId+'|'+e.description;
-    if(!map.has(key)) map.set(key,{projectId:e.projectId,description:e.description,hoursByDow:days.map(()=>0)});
+    if(!map.has(key)) map.set(key,{projectId:e.projectId,description:e.description,hoursByDow:days.map(()=>0),startByDow:days.map(()=>null),endByDow:days.map(()=>null)});
     const di = days.indexOf(e.date);
-    if(di>=0) map.get(key).hoursByDow[di] += e.hours;
+    if(di>=0){
+      map.get(key).hoursByDow[di] += e.hours;
+      if(e.start_time) map.get(key).startByDow[di] = e.start_time;
+      if(e.end_time) map.get(key).endByDow[di] = e.end_time;
+    }
   });
   const tplRows = Array.from(map.values());
   const { data } = await sb.from('templates').insert({user_id:session.user.id, name:name||'Untitled template', rows:tplRows, type:'weekly'}).select().maybeSingle();
@@ -561,10 +564,14 @@ async function applyTemplateToWeekStart(template, startDate){
     for(let i=0;i<r.hoursByDow.length;i++){
       const h = r.hoursByDow[i]; if(!h) continue;
       const date = days[i];
+      const start_time = (r.startByDow && r.startByDow[i]) || null;
+      const end_time = (r.endByDow && r.endByDow[i]) || null;
       const existing = entries.find(e=>e.user_id===session.user.id && e.projectId===r.projectId && e.description===r.description && e.date===date);
-      if(existing){ await sb.from('entries').update({hours:h}).eq('id', existing.id); existing.hours=h; }
-      else{
-        const { data } = await sb.from('entries').insert({user_id:session.user.id, project_id:r.projectId, description:r.description, date, hours:h}).select().maybeSingle();
+      if(existing){
+        await sb.from('entries').update({hours:h, start_time, end_time}).eq('id', existing.id);
+        existing.hours=h; existing.start_time=start_time; existing.end_time=end_time;
+      }else{
+        const { data } = await sb.from('entries').insert({user_id:session.user.id, project_id:r.projectId, description:r.description, date, hours:h, start_time, end_time}).select().maybeSingle();
         if(data) entries.push(mapEntry(data));
       }
     }
