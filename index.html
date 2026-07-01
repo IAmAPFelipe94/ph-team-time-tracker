@@ -626,46 +626,171 @@ function downloadFile(content, filename, mime){
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url), 2000);
 }
-function exportCsv(){
-  const re = reportEntries().slice().sort((a,b)=>a.date.localeCompare(b.date));
-  let csv = profile.is_admin ? 'Date,Person,Project,Description,Hours\n' : 'Date,Project,Description,Hours\n';
+// ---- Detailed CSV ----
+function exportDetailedCsv(){
+  const re = reportEntries().slice().sort((a,b)=>b.date.localeCompare(a.date));
+  const hasAdmin = profile.is_admin;
+  let csv = hasAdmin ? 'Date,Description,Project,Client,Start,End,Duration,User\n' : 'Date,Description,Project,Client,Start,End,Duration\n';
   re.forEach(e=>{
     const proj = projectById(e.projectId);
-    const row = profile.is_admin
-      ? [e.date, csvEsc((profileById(e.user_id)||{}).email||e.user_id), csvEsc(proj?proj.name:'Unknown'), csvEsc(e.description||''), e.hours]
-      : [e.date, csvEsc(proj?proj.name:'Unknown'), csvEsc(e.description||''), e.hours];
+    const row = [
+      e.date, csvEsc(e.description||''), csvEsc(proj?proj.name:'Unknown'), csvEsc(proj?proj.client:''),
+      e.start_time||'', e.end_time||'', fmtHHMM(e.hours),
+    ];
+    if(hasAdmin) row.push(csvEsc((profileById(e.user_id)||{}).email||e.user_id));
     csv += row.join(',')+'\n';
   });
-  downloadFile(csv, 'timesheet_export.csv', 'text/csv');
+  downloadFile(csv, 'detailed_report_'+reportRange+'.csv', 'text/csv');
 }
+
+// ---- Summary CSV ----
 function exportSummaryCsv(){
-  const rows = reportByProject();
-  let csv = 'Project,Total Hours\n';
-  rows.forEach(r=>{ const proj=projectById(r.projectId); csv += [csvEsc(proj?proj.name:'Unknown'), Math.round(r.hours*100)/100].join(',')+'\n'; });
-  downloadFile(csv, 'timesheet_summary.csv', 'text/csv');
+  const byProj = reportByProject();
+  const total = byProj.reduce((a,b)=>a+b.hours,0);
+  let csv = 'Project,Client,Duration,Percentage\n';
+  byProj.forEach(r=>{
+    const proj=projectById(r.projectId);
+    const pct = total ? Math.round((r.hours/total)*1000)/10 : 0;
+    csv += [csvEsc(proj?proj.name:'Unknown'), csvEsc(proj?proj.client:''), fmtHHMM(r.hours), pct+'%'].join(',')+'\n';
+  });
+  downloadFile(csv, 'summary_report_'+reportRange+'.csv', 'text/csv');
 }
+
+// ---- Detailed XLSX ----
 function exportDetailedXlsx(){
   if(typeof XLSX==='undefined'){ alert('Export library is still loading, try again in a moment.'); return; }
-  const re = reportEntries().slice().sort((a,b)=> a.date.localeCompare(b.date));
+  const re = reportEntries().slice().sort((a,b)=>b.date.localeCompare(a.date));
   const rows = re.map(e=>{
     const proj = projectById(e.projectId);
-    const base = {
+    const row = {
       Date: e.date,
+      Description: e.description || '',
       Project: proj ? proj.name : 'Unknown',
       Client: proj ? proj.client : '',
-      Description: e.description || '(Without description)',
+      'Start time': e.start_time || '',
+      'End time': e.end_time || '',
       Duration: fmtHHMM(e.hours),
       Hours: Math.round(e.hours*100)/100,
     };
-    if(profile.is_admin) base.Person = (profileById(e.user_id)||{}).email || e.user_id;
-    return base;
+    if(profile.is_admin) row.User = (profileById(e.user_id)||{}).email || e.user_id;
+    return row;
   });
   const ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{wch:12},{wch:30},{wch:20},{wch:30},{wch:10},{wch:10},{wch:24}];
+  ws['!cols'] = [{wch:12},{wch:36},{wch:32},{wch:24},{wch:10},{wch:10},{wch:10},{wch:8},{wch:26}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Detailed report');
-  XLSX.writeFile(wb, 'timesheet_detailed_'+reportRange+'.xlsx');
+  XLSX.writeFile(wb, 'detailed_report_'+reportRange+'.xlsx');
 }
+
+// ---- Summary XLSX ----
+function exportSummaryXlsx(){
+  if(typeof XLSX==='undefined'){ alert('Export library is still loading, try again in a moment.'); return; }
+  const byProj = reportByProject();
+  const total = byProj.reduce((a,b)=>a+b.hours,0);
+
+  // Sheet 1: Project totals
+  const projRows = byProj.map(r=>{
+    const proj=projectById(r.projectId);
+    const pct = total ? Math.round((r.hours/total)*1000)/10 : 0;
+    return { Project: proj?proj.name:'Unknown', Client: proj?proj.client:'', Duration: fmtHHMM(r.hours), Hours: Math.round(r.hours*100)/100, Percentage: pct+'%' };
+  });
+
+  // Sheet 2: Description totals
+  const re = reportEntries();
+  const descMap = new Map();
+  re.forEach(e=>{ descMap.set(e.description||'(No description)', (descMap.get(e.description||'(No description)')||0)+e.hours); });
+  const descRows = Array.from(descMap.entries())
+    .sort((a,b)=>b[1]-a[1])
+    .map(([desc,hours])=>({ Description: desc, Duration: fmtHHMM(hours), Hours: Math.round(hours*100)/100, Percentage: total?Math.round((hours/total)*1000)/10+'%':'0%' }));
+
+  const wb = XLSX.utils.book_new();
+  const ws1 = XLSX.utils.json_to_sheet(projRows);
+  ws1['!cols'] = [{wch:32},{wch:24},{wch:10},{wch:8},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, ws1, 'By project');
+  const ws2 = XLSX.utils.json_to_sheet(descRows);
+  ws2['!cols'] = [{wch:36},{wch:10},{wch:8},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, ws2, 'By description');
+  XLSX.writeFile(wb, 'summary_report_'+reportRange+'.xlsx');
+}
+
+// ---- Detailed PDF (Clockify-style) ----
+function exportDetailedPdf(){
+  if(typeof window.jspdf==='undefined'){ alert('Export library is still loading, try again in a moment.'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'pt', format:'a4'});
+  const re = reportEntries().slice().sort((a,b)=>b.date.localeCompare(a.date));
+  const total = re.reduce((s,e)=>s+e.hours,0);
+  const marginX=48, pageW=547; let y=56;
+
+  // Header
+  doc.setFont('helvetica','bold'); doc.setFontSize(22); doc.setTextColor(30,30,30);
+  doc.text('Detailed report', marginX, y); y+=24;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(120,120,120);
+  doc.text(rangeLabelText(), marginX, y); y+=28;
+
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(120,120,120);
+  doc.text('Total:', marginX, y);
+  doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(30,30,30);
+  doc.text(fmtHHMM(total), marginX+34, y+1);
+  y+=28;
+
+  // Table header
+  doc.setDrawColor(210,210,210); doc.line(marginX, y, pageW, y); y+=10;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(160,160,160);
+  doc.text('Date', marginX, y);
+  doc.text('Description', marginX+72, y);
+  doc.text('Duration', pageW-80, y);
+  if(profile.is_admin) doc.text('User', pageW-20, y, {align:'right'});
+  y+=6;
+  doc.setDrawColor(220,220,220); doc.line(marginX, y, pageW, y); y+=14;
+
+  // Entries
+  re.forEach(e=>{
+    if(y > 760){ doc.addPage(); y=48; }
+    const proj = projectById(e.projectId);
+    const projLabel = (proj ? proj.name : 'Unknown') + (proj && proj.client ? ' — '+proj.client : '');
+    const timeRange = e.start_time && e.end_time ? e.start_time+' - '+e.end_time : '';
+    const desc = e.description || '(No description)';
+
+    // Date
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(60,60,60);
+    doc.text(e.date, marginX, y);
+
+    // Description (bold) + project below
+    doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(30,30,30);
+    const descTrunc = desc.length>55 ? desc.slice(0,53)+'…' : desc;
+    doc.text(descTrunc, marginX+72, y);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(120,120,120);
+    const projTrunc = projLabel.length>60 ? projLabel.slice(0,58)+'…' : projLabel;
+    doc.text(projTrunc, marginX+72, y+11);
+    if(timeRange){ doc.text(timeRange, marginX+72, y+21); }
+
+    // Duration
+    doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(30,30,30);
+    doc.text(fmtHHMM(e.hours), pageW-80, y);
+
+    // User (admin only)
+    if(profile.is_admin){
+      doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(80,80,80);
+      doc.text((profileById(e.user_id)||{}).email||'?', pageW-20, y, {align:'right'});
+    }
+
+    y += timeRange ? 32 : 22;
+    doc.setDrawColor(235,235,235); doc.line(marginX, y, pageW, y); y+=8;
+  });
+
+  // Footer
+  const pageCount = doc.internal.getNumberOfPages();
+  for(let i=1;i<=pageCount;i++){
+    doc.setPage(i);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(180,180,180);
+    doc.text('PH Team Time Tracker by AP', marginX, 820);
+    doc.text('Page '+i+' of '+pageCount, pageW, 820, {align:'right'});
+  }
+  doc.save('detailed_report_'+reportRange+'.pdf');
+}
+
+// ---- Summary PDF (Clockify-style) ----
 function drawDonutDataUrl(byProj, total){
   const size=360, cx=size/2, cy=size/2, rOuter=150, rInner=92;
   const canvas=document.createElement('canvas'); canvas.width=size; canvas.height=size;
@@ -692,74 +817,118 @@ function exportSummaryPdf(){
   const doc = new jsPDF({unit:'pt', format:'a4'});
   const byProj = reportByProject();
   const total = byProj.reduce((a,b)=>a+b.hours,0);
-  const marginX = 48; let y = 56;
+  const marginX=48, pageW=547; let y=56;
 
-  doc.setFont('helvetica','bold'); doc.setFontSize(20); doc.setTextColor(20,24,31);
-  doc.text('Summary report', marginX, y); y += 22;
-  doc.setFont('helvetica','normal'); doc.setFontSize(10.5); doc.setTextColor(110,116,128);
-  doc.text(rangeLabelText(), marginX, y); y += 30;
+  // Header
+  doc.setFont('helvetica','bold'); doc.setFontSize(22); doc.setTextColor(30,30,30);
+  doc.text('Summary report', marginX, y); y+=24;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(120,120,120);
+  doc.text(rangeLabelText(), marginX, y); y+=28;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(120,120,120);
+  doc.text('Total:', marginX, y);
+  doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(30,30,30);
+  doc.text(fmtHHMM(total), marginX+34, y+1); y+=36;
 
-  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(110,116,128);
-  doc.text('Total', marginX, y);
-  doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(20,24,31);
-  doc.text(fmtHHMM(total), marginX, y+18); y += 46;
-
-  doc.setDrawColor(225,225,225); doc.line(marginX, y, 547, y); y += 28;
-  doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(20,24,31);
-  doc.text('Project', marginX, y); y += 14;
-
+  // Project section
+  doc.setDrawColor(210,210,210); doc.line(marginX, y, pageW, y); y+=16;
+  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(30,30,30);
+  doc.text('Project', marginX, y); y+=14;
   if(byProj.length){
     const chartDataUrl = drawDonutDataUrl(byProj, total);
-    const chartSize = 150;
-    doc.addImage(chartDataUrl, 'PNG', marginX, y, chartSize, chartSize);
-    let ty = y + 4;
-    const listX = marginX + chartSize + 28;
-    doc.setFont('helvetica','normal'); doc.setFontSize(10.5);
+    doc.addImage(chartDataUrl,'PNG',marginX,y,130,130);
+    let ty=y+6; const lx=marginX+148;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
     byProj.forEach(r=>{
-      const proj = projectById(r.projectId);
-      const pct = total ? Math.round((r.hours/total)*1000)/10 : 0;
-      const c = proj ? hexToRgb(proj.color) : {r:154,g:167,b:176};
-      doc.setFillColor(c.r,c.g,c.b); doc.circle(listX, ty-3.5, 3.5, 'F');
-      doc.setTextColor(40,44,52);
-      const label = (proj?proj.name:'Unknown') + (proj && proj.client ? ' — '+proj.client : '');
-      doc.text(label, listX+12, ty);
-      doc.setTextColor(110,116,128);
-      doc.text(fmtHHMM(r.hours)+'   '+pct+'%', 500, ty, {align:'right'});
-      ty += 20;
+      if(ty>y+126) return;
+      const proj=projectById(r.projectId);
+      const pct=total?Math.round((r.hours/total)*1000)/10:0;
+      const c=proj?hexToRgb(proj.color):{r:154,g:167,b:176};
+      doc.setFillColor(c.r,c.g,c.b); doc.circle(lx,ty-3,3.5,'F');
+      doc.setTextColor(30,30,30);
+      const lbl=(proj?proj.name:'Unknown')+(proj&&proj.client?' — '+proj.client:'');
+      doc.text(lbl.length>52?lbl.slice(0,50)+'…':lbl, lx+10, ty);
+      doc.setTextColor(100,100,100);
+      doc.text(fmtHHMM(r.hours), pageW-60, ty, {align:'right'});
+      doc.text(pct+'%', pageW, ty, {align:'right'});
+      ty+=18;
     });
-    y += chartSize + 30;
-  }else{
-    doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(140,140,140);
-    doc.text('No entries in this range yet.', marginX, y+10); y += 30;
+    y+=144;
+  } else { y+=20; }
+
+  // Description section
+  doc.setDrawColor(210,210,210); doc.line(marginX, y, pageW, y); y+=16;
+  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(30,30,30);
+  doc.text('Description', marginX, y); y+=14;
+  const re = reportEntries();
+  const descMap = new Map();
+  re.forEach(e=>{ const k=e.description||'(No description)'; descMap.set(k,(descMap.get(k)||0)+e.hours); });
+  const byDesc = Array.from(descMap.entries()).sort((a,b)=>b[1]-a[1]).map(([d,h])=>({desc:d,hours:h}));
+  const descColors=['#89B4FA','#F38BA8','#A6E3A1','#CBA6F7','#FAB387','#94E2D5','#F9E2AF','#89DCEB'];
+  if(byDesc.length){
+    const descCanvas=document.createElement('canvas'); descCanvas.width=360; descCanvas.height=360;
+    const dCtx=descCanvas.getContext('2d');
+    dCtx.fillStyle='#FFF'; dCtx.fillRect(0,0,360,360);
+    let ds=-Math.PI/2;
+    byDesc.forEach((r,i)=>{
+      const frac=total?r.hours/total:0; const de=ds+frac*Math.PI*2;
+      dCtx.beginPath(); dCtx.moveTo(180,180); dCtx.arc(180,180,150,ds,de); dCtx.closePath();
+      dCtx.fillStyle=descColors[i%descColors.length]; dCtx.fill(); ds=de;
+    });
+    dCtx.beginPath(); dCtx.arc(180,180,92,0,Math.PI*2); dCtx.fillStyle='#FFF'; dCtx.fill();
+    dCtx.fillStyle='#222'; dCtx.font='600 22px Helvetica'; dCtx.textAlign='center'; dCtx.textBaseline='middle';
+    dCtx.fillText(fmtHHMM(total), 180, 180);
+    doc.addImage(descCanvas.toDataURL('image/png'),'PNG',marginX,y,130,130);
+    let ty2=y+6; const lx2=marginX+148;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+    byDesc.forEach((r,i)=>{
+      if(ty2>y+126) return;
+      const c=hexToRgb(descColors[i%descColors.length]);
+      const pct=total?Math.round((r.hours/total)*1000)/10:0;
+      doc.setFillColor(c.r,c.g,c.b); doc.circle(lx2,ty2-3,3.5,'F');
+      doc.setTextColor(30,30,30);
+      doc.text(r.desc.length>52?r.desc.slice(0,50)+'…':r.desc, lx2+10, ty2);
+      doc.setTextColor(100,100,100);
+      doc.text(fmtHHMM(r.hours), pageW-60, ty2, {align:'right'});
+      doc.text(pct+'%', pageW, ty2, {align:'right'});
+      ty2+=18;
+    });
+    y+=150;
   }
 
-  doc.setDrawColor(225,225,225); doc.line(marginX, y, 547, y); y += 30;
-  doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(20,24,31);
-  doc.text('Entries', marginX, y); y += 16;
-  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(140,144,152);
-  doc.text('Date', marginX, y);
-  doc.text(profile.is_admin ? 'Person / Project' : 'Project', marginX+70, y);
-  doc.text('Duration', 500, y, {align:'right'});
-  y += 10;
-  doc.setDrawColor(235,235,235); doc.line(marginX, y, 547, y); y += 14;
-
-  const re = reportEntries().slice().sort((a,b)=>a.date.localeCompare(b.date));
-  doc.setFontSize(9.5);
-  re.forEach(e=>{
-    if(y > 770){ doc.addPage(); y = 56; }
-    const proj = projectById(e.projectId);
-    doc.setTextColor(60,64,72);
-    doc.text(e.date, marginX, y);
-    let label = (proj?proj.name:'Unknown') + (e.description ? ' — '+e.description : '');
-    if(profile.is_admin) label = ((profileById(e.user_id)||{}).email || '?') + ' · ' + label;
-    doc.text(label.length>66 ? label.slice(0,64)+'…' : label, marginX+70, y);
-    doc.text(fmtHHMM(e.hours), 500, y, {align:'right'});
-    y += 15;
+  // Project / Description breakdown table
+  doc.addPage(); y=48;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(150,150,150);
+  doc.text('Project / Description', marginX, y);
+  doc.text('Duration', pageW-60, y, {align:'right'});
+  y+=8; doc.setDrawColor(210,210,210); doc.line(marginX, y, pageW, y); y+=10;
+  byProj.forEach(r=>{
+    if(y>780){ doc.addPage(); y=48; }
+    const proj=projectById(r.projectId);
+    const lbl=(proj?proj.name:'Unknown')+(proj&&proj.client?' — '+proj.client:'');
+    doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(30,30,30);
+    doc.text(lbl.length>72?lbl.slice(0,70)+'…':lbl, marginX, y);
+    doc.text(fmtHHMM(r.hours), pageW-60, y, {align:'right'});
+    y+=14;
+    const taskMap=new Map();
+    re.filter(e=>e.projectId===r.projectId).forEach(e=>{ const k=e.description||'(No description)'; taskMap.set(k,(taskMap.get(k)||0)+e.hours); });
+    taskMap.forEach((h,d)=>{
+      if(y>780){ doc.addPage(); y=48; }
+      doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(100,100,100);
+      doc.text('    '+(d.length>70?d.slice(0,68)+'…':d), marginX+20, y);
+      doc.text(fmtHHMM(h), pageW-60, y, {align:'right'});
+      y+=13;
+    });
+    doc.setDrawColor(230,230,230); doc.line(marginX, y+2, pageW, y+2); y+=12;
   });
 
-  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(170,170,170);
-  doc.text('Generated with PH Team Time Tracker by AP', marginX, 815);
-  doc.save('timesheet_summary_'+reportRange+'.pdf');
+  const pageCount=doc.internal.getNumberOfPages();
+  for(let i=1;i<=pageCount;i++){
+    doc.setPage(i);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(180,180,180);
+    doc.text('PH Team Time Tracker by AP', marginX, 825);
+    doc.text('Page '+i+' of '+pageCount, pageW, 825, {align:'right'});
+  }
+  doc.save('summary_report_'+reportRange+'.pdf');
 }
 
 // ---------------- rendering ----------------
@@ -1093,12 +1262,19 @@ function renderReports(){
       <div class="stat-box"><div class="label">Projects</div><div class="value">${byProj.length}</div></div>
     </div>
     <div style="margin-bottom:18px;">${bars}</div>
-    <div class="export-row">
-      <button class="btn primary" id="exportCsv">Export entries (CSV)</button>
-      <button class="btn" id="exportXlsx">Export entries (XLSX)</button>
-      <span style="width:1px;height:28px;background:var(--border);"></span>
-      <button class="btn primary" id="exportSummaryPdf">Export summary (PDF)</button>
-      <button class="btn" id="exportSummary">Export summary (CSV)</button>
+    <div style="margin-top:4px;">
+      <div style="font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px;">Detailed report</div>
+      <div class="export-row" style="margin-bottom:14px;">
+        <button class="btn primary" id="exportDetailedPdf">↓ PDF</button>
+        <button class="btn" id="exportXlsx">↓ XLSX</button>
+        <button class="btn" id="exportCsv">↓ CSV</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px;">Summary report</div>
+      <div class="export-row">
+        <button class="btn primary" id="exportSummaryPdf">↓ PDF</button>
+        <button class="btn" id="exportSummaryXlsx">↓ XLSX</button>
+        <button class="btn" id="exportSummary">↓ CSV</button>
+      </div>
     </div>
   </div>`;
 }
@@ -1391,10 +1567,12 @@ function attachHandlers(){
     document.querySelectorAll('[data-range]').forEach(p=>{ p.onclick=()=>{ reportRange=p.dataset.range; render(); }; });
     const teamFilter=document.getElementById('teamFilterReports');
     if(teamFilter) teamFilter.onchange=(e)=>{ teamUserFilter=e.target.value; render(); };
-    const exC=document.getElementById('exportCsv'); if(exC) exC.onclick=exportCsv;
+    const exC=document.getElementById('exportCsv'); if(exC) exC.onclick=exportDetailedCsv;
     const exS=document.getElementById('exportSummary'); if(exS) exS.onclick=exportSummaryCsv;
     const exX=document.getElementById('exportXlsx'); if(exX) exX.onclick=exportDetailedXlsx;
     const exP=document.getElementById('exportSummaryPdf'); if(exP) exP.onclick=exportSummaryPdf;
+    const exDP=document.getElementById('exportDetailedPdf'); if(exDP) exDP.onclick=exportDetailedPdf;
+    const exSX=document.getElementById('exportSummaryXlsx'); if(exSX) exSX.onclick=exportSummaryXlsx;
   }
 
   if(activeTab==='projects'){
