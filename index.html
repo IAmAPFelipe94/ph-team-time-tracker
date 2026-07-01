@@ -273,7 +273,7 @@ async function loadEntries(){
 }
 async function loadTemplates(){
   const { data } = await sb.from('templates').select('*').eq('user_id', session.user.id);
-  templates = data || [];
+  templates = (data||[]).map(t=>({...t, type:t.type||'weekly'}));
 }
 async function loadTeamProfiles(){
   const { data } = await sb.from('profiles').select('*');
@@ -451,13 +451,37 @@ async function deleteEntry(id){
 
 // ---------------- templates ----------------
 async function saveCurrentWeekAsTemplate(name){
-  const rows = groupRowsForWeek().filter(r=>!r.draft);
+  const rows = weekEntries().filter(e=>e.user_id===session.user.id);
   const days = weekDates().map(fmtDate);
   if(!rows.length) return false;
-  const tplRows = rows.map(r=>({ projectId:r.projectId, description:r.description, hoursByDow: days.map(d=>r.byDate[d]||0) }));
-  const { data } = await sb.from('templates').insert({user_id:session.user.id, name:name||'Untitled template', rows:tplRows}).select().maybeSingle();
+  // group by project+desc, store hoursByDow
+  const map = new Map();
+  rows.forEach(e=>{
+    const key=e.projectId+'|'+e.description;
+    if(!map.has(key)) map.set(key,{projectId:e.projectId,description:e.description,hoursByDow:days.map(()=>0)});
+    const di = days.indexOf(e.date);
+    if(di>=0) map.get(key).hoursByDow[di] += e.hours;
+  });
+  const tplRows = Array.from(map.values());
+  const { data } = await sb.from('templates').insert({user_id:session.user.id, name:name||'Untitled template', rows:tplRows, type:'weekly'}).select().maybeSingle();
   if(data) templates.push(data);
   return true;
+}
+async function saveDayAsTemplate(dateStr, name){
+  const dayEntries = entries.filter(e=>e.user_id===session.user.id && e.date===dateStr);
+  if(!dayEntries.length) return false;
+  const tplRows = dayEntries.map(e=>({ projectId:e.projectId, description:e.description, hours:e.hours, start_time:e.start_time||null, end_time:e.end_time||null }));
+  const { data } = await sb.from('templates').insert({user_id:session.user.id, name:name||'Untitled daily template', rows:tplRows, type:'daily'}).select().maybeSingle();
+  if(data) templates.push(data);
+  return true;
+}
+async function applyDailyTemplate(template, dateStr){
+  for(const r of template.rows){
+    const row = { user_id:session.user.id, project_id:r.projectId, description:r.description, date:dateStr, hours:r.hours, start_time:r.start_time||null, end_time:r.end_time||null };
+    const { data } = await sb.from('entries').insert(row).select().maybeSingle();
+    if(data) entries.push(mapEntry(data));
+  }
+  render();
 }
 async function deleteTemplate(id){
   await sb.from('templates').delete().eq('id', id);
@@ -771,7 +795,7 @@ function renderEntryRow(e){
   const timeStr = (e.start_time && e.end_time)
     ? `${e.start_time} – ${e.end_time}${isOvernight(e.start_time,e.end_time)?'<sup style="font-size:9px;color:var(--accent)"> +1</sup>':''}`
     : '–';
-  const tasks = (proj||{}).tasks||[];
+  const isRunning = timer && timer.projectId===e.projectId && timer.description===e.description;
   return `
   <div class="entry-log-row">
     <div class="entry-desc-col">
@@ -784,6 +808,9 @@ function renderEntryRow(e){
     <div class="entry-time-col">${timeStr}</div>
     <div class="entry-dur-col">${fmtHHMM(e.hours)}</div>
     <div class="entry-actions">
+      <button class="btn ghost continue-btn ${isRunning?'running-indicator':''}" data-continue="${e.id}" title="${isRunning?'Running…':'Start timer with this entry'}">
+        ${isRunning ? '<span style="color:var(--green)">●</span>' : '▷'}
+      </button>
       <button class="btn ghost" data-editentry="${e.id}" title="Edit">✎</button>
       <button class="btn ghost" data-delentry="${e.id}" title="Delete">✕</button>
     </div>
@@ -875,6 +902,8 @@ function renderTimesheet(){
   we.forEach(e=>{ if(byDate[e.date]) byDate[e.date].push(e); });
 
   const grandTotal = we.reduce((a,b)=>a+b.hours,0);
+  const weeklyTemplates = templates.filter(t=>!t.type||t.type==='weekly');
+  const dailyTemplates = templates.filter(t=>t.type==='daily');
 
   let dayHtml = '';
   days.forEach((d,i)=>{
@@ -883,10 +912,20 @@ function renderTimesheet(){
     const dayTotal = dayEntries.reduce((a,b)=>a+b.hours,0);
     const isToday = ds===today;
 
+    const saveDayBtn = dayEntries.length
+      ? `<button class="btn ghost" style="font-size:11px;padding:3px 7px;" data-savedaytemplate="${ds}" title="Save this day as a template">💾 Save day</button>`
+      : '';
+    const dtplOptions = dailyTemplates.map(t=>`<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
+    const applyDayTpl = dailyTemplates.length
+      ? `<select class="row-select" id="dtpl-${ds}" style="font-size:11px;padding:4px 6px;max-width:150px;"><option value="">Apply daily template…</option>${dtplOptions}</select><button class="btn" style="font-size:11px;padding:4px 8px;" data-applydaytpl="${ds}">Apply</button>`
+      : '';
     dayHtml += `<div class="day-group">
       <div class="day-header ${isToday?'is-today':''}">
         <span class="day-label">${DOW[i]}, ${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>
-        <span class="day-total">${dayTotal?'Total: '+fmtHHMM(dayTotal):''}</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          ${saveDayBtn}${applyDayTpl}
+          <span class="day-total">${dayTotal?'Total: '+fmtHHMM(dayTotal):''}</span>
+        </div>
       </div>`;
 
     if(addingToDate===ds) dayHtml += renderAddEntryForm(ds);
@@ -919,12 +958,12 @@ function renderTimesheet(){
     ${dayHtml}
     <div style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:14px;">
       <select class="row-select" id="templateSelect" style="max-width:180px;">
-        <option value="">Saved templates…</option>
-        ${templates.map(t=>`<option value="${t.id}" ${selectedTemplateId===t.id?'selected':''}>${escapeHtml(t.name)}</option>`).join('')}
+        <option value="">Weekly templates…</option>
+        ${weeklyTemplates.map(t=>{const sel=selectedTemplateId===t.id?'selected':''; return '<option value="'+t.id+'" '+sel+'>'+escapeHtml(t.name)+'</option>';}).join('')}
       </select>
-      <button class="btn" id="applyWeekBtn" ${templates.length?'':'disabled'}>Apply to week</button>
-      <button class="btn" id="applyMonthBtn" ${templates.length?'':'disabled'}>Apply to month</button>
-      <button class="btn ghost" id="deleteTplBtn" ${templates.length?'':'disabled'}>Delete</button>
+      <button class="btn" id="applyWeekBtn" ${weeklyTemplates.length?'':'disabled'}>Apply to week</button>
+      <button class="btn" id="applyMonthBtn" ${weeklyTemplates.length?'':'disabled'}>Apply to month</button>
+      <button class="btn ghost" id="deleteTplBtn" ${weeklyTemplates.length?'':'disabled'}>Delete weekly</button>
       <span style="flex:1;"></span>
       <button class="btn" id="saveTplBtn">Save week as template</button>
     </div>
@@ -1078,8 +1117,40 @@ function attachHandlers(){
     if(next) next.onclick=()=>{ weekStart=addDays(weekStart,7); editingEntryId=null; addingToDate=null; editForm={}; render(); };
     if(todayBtn) todayBtn.onclick=()=>{ weekStart=mondayOf(new Date()); editingEntryId=null; addingToDate=null; editForm={}; render(); };
 
-    // Add entry buttons
-    document.querySelectorAll('[data-adddate]').forEach(btn=>{
+    // Continue (play) button
+    document.querySelectorAll('[data-continue]').forEach(btn=>{
+      btn.onclick=()=>{
+        const e = entries.find(x=>x.id===btn.dataset.continue);
+        if(e){
+          if(timer) stopTimer().then(()=>startTimer(e.projectId, e.description));
+          else startTimer(e.projectId, e.description);
+        }
+      };
+    });
+
+    // Save day as template
+    document.querySelectorAll('[data-savedaytemplate]').forEach(btn=>{
+      btn.onclick=()=>{
+        const ds = btn.dataset.savedaytemplate;
+        const name = prompt('Name this daily template (e.g. "Standard moderation day"):');
+        if(name===null) return;
+        saveDayAsTemplate(ds, name.trim()).then(ok=>{ if(!ok) alert('No entries on this day to save.'); render(); });
+      };
+    });
+
+    // Apply daily template
+    document.querySelectorAll('[data-applydaytpl]').forEach(btn=>{
+      btn.onclick=()=>{
+        const ds = btn.dataset.applydaytpl;
+        const sel = document.getElementById('dtpl-'+ds);
+        if(!sel||!sel.value){ alert('Pick a daily template first.'); return; }
+        const tpl = templates.find(t=>t.id===sel.value);
+        if(!tpl) return;
+        if(confirm('Apply "'+tpl.name+'" to '+ds+'? New entries will be added to this day.')){ applyDailyTemplate(tpl, ds); }
+      };
+    });
+
+
       btn.onclick=()=>{ addingToDate=btn.dataset.adddate; editingEntryId=null; editForm={ projectId: projects[0]?.id }; render(); };
     });
 
@@ -1232,7 +1303,6 @@ function attachHandlers(){
   });
 })();
 
-})();
 </script>
 </body>
 </html>
