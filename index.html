@@ -618,9 +618,10 @@ function rangeLabelText(){
   const [s,e] = reportDateRange();
   if(reportRange==='all') return 'All time';
   if(reportRange==='lastmonth'){
-    const today=new Date(); const s=new Date(today.getFullYear(),today.getMonth()-1,1); const e=new Date(today.getFullYear(),today.getMonth(),0);
+    const ms=new Date(new Date().getFullYear(),new Date().getMonth()-1,1);
+    const me=new Date(new Date().getFullYear(),new Date().getMonth(),0);
     const fmt=(d)=>{ const [y,mo,da]=fmtDate(d).split('-'); return da+'/'+mo+'/'+y; };
-    return fmt(fmtDate(s))+' - '+fmt(fmtDate(e));
+    return fmt(fmtDate(ms))+' - '+fmt(fmtDate(me));
   }
   const fmt=(d)=>{ const [y,mo,da]=d.split('-'); return da+'/'+mo+'/'+y; };
   return fmt(s)+' - '+fmt(e);
