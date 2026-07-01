@@ -1183,7 +1183,9 @@ function renderTimesheet(){
   const dailyTemplates = templates.filter(t=>t.type==='daily');
 
   let dayHtml = '';
-  days.forEach((d,i)=>{
+  const orderedDays = [...days].reverse();
+  orderedDays.forEach((d)=>{
+    const i = days.indexOf(d);
     const ds = fmtDate(d);
     const dayEntries = byDate[ds]||[];
     const dayTotal = dayEntries.reduce((a,b)=>a+b.hours,0);
