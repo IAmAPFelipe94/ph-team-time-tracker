@@ -18,40 +18,53 @@
     --red:#E2685A; --red-soft:rgba(226,104,90,0.14);
     --radius:8px;
   }
-  [data-theme="light"]{
-    --bg:#F4F5F7; --surface:#FFFFFF; --surface-2:#F0F1F3; --surface-3:#E4E6EA;
-    --border:#DDE0E6; --border-strong:#C4C8D0; --text:#1A1D23; --text-dim:#5A6072; --text-faint:#9CA3AF;
-    --accent:#D4820A; --accent-dim:#B36A00; --accent-soft:rgba(212,130,10,0.12);
-    --green:#1E8A5C; --green-soft:rgba(30,138,92,0.12);
-    --red:#C0392B; --red-soft:rgba(192,57,43,0.12);
-  }
-  [data-theme="midnight"]{
-    --bg:#070B12; --surface:#0E1520; --surface-2:#131C2B; --surface-3:#1A2540;
-    --border:#1E2D45; --border-strong:#2A3F60; --text:#CDD6F4; --text-dim:#7E90B0; --text-faint:#4A5568;
-    --accent:#89B4FA; --accent-dim:#5A8EF5; --accent-soft:rgba(137,180,250,0.14);
-    --green:#A6E3A1; --green-soft:rgba(166,227,161,0.14);
-    --red:#F38BA8; --red-soft:rgba(243,139,168,0.14);
-  }
-  [data-theme="forest"]{
-    --bg:#0E1512; --surface:#141E19; --surface-2:#1B2820; --surface-3:#22342A;
-    --border:#273D2F; --border-strong:#38554A; --text:#D4E6D0; --text-dim:#7AA882; --text-faint:#4A6650;
-    --accent:#A8D5A2; --accent-dim:#78B572; --accent-soft:rgba(168,213,162,0.14);
-    --green:#69D08A; --green-soft:rgba(105,208,138,0.14);
+  /* Just Black — Chrome's own official dark theme */
+  [data-theme="justblack"]{
+    --bg:#202124; --surface:#292A2D; --surface-2:#35363A; --surface-3:#3C4043;
+    --border:#3C4043; --border-strong:#5F6368; --text:#E8EAED; --text-dim:#9AA0A6; --text-faint:#5F6368;
+    --accent:#8AB4F8; --accent-dim:#669DF6; --accent-soft:rgba(138,180,248,0.14);
+    --green:#81C995; --green-soft:rgba(129,201,149,0.14);
     --red:#F28B82; --red-soft:rgba(242,139,130,0.14);
   }
-  [data-theme="slate"]{
-    --bg:#0F172A; --surface:#1E293B; --surface-2:#263346; --surface-3:#2E3F56;
-    --border:#334155; --border-strong:#475569; --text:#E2E8F0; --text-dim:#94A3B8; --text-faint:#64748B;
-    --accent:#818CF8; --accent-dim:#6366F1; --accent-soft:rgba(129,140,248,0.14);
-    --green:#34D399; --green-soft:rgba(52,211,153,0.14);
-    --red:#F87171; --red-soft:rgba(248,113,113,0.14);
+  /* Catppuccin Mocha — Most downloaded Chrome theme, darkest flavor */
+  [data-theme="mocha"]{
+    --bg:#1e1e2e; --surface:#181825; --surface-2:#313244; --surface-3:#45475a;
+    --border:#45475a; --border-strong:#585b70; --text:#cdd6f4; --text-dim:#a6adc8; --text-faint:#7f849c;
+    --accent:#cba6f7; --accent-dim:#b48ffc; --accent-soft:rgba(203,166,247,0.14);
+    --green:#a6e3a1; --green-soft:rgba(166,227,161,0.14);
+    --red:#f38ba8; --red-soft:rgba(243,139,168,0.14);
   }
-  [data-theme="rose"]{
-    --bg:#1A0F12; --surface:#241418; --surface-2:#2E1A1F; --surface-3:#3A2028;
-    --border:#4A2830; --border-strong:#623540; --text:#F5D6DC; --text-dim:#B8848E; --text-faint:#7A5058;
-    --accent:#F9A8D4; --accent-dim:#F472B6; --accent-soft:rgba(249,168,212,0.14);
-    --green:#86EFAC; --green-soft:rgba(134,239,172,0.14);
-    --red:#FCA5A5; --red-soft:rgba(252,165,165,0.14);
+  /* Catppuccin Macchiato — Medium contrast, 4.9 star rated */
+  [data-theme="macchiato"]{
+    --bg:#24273a; --surface:#1e2030; --surface-2:#363a4f; --surface-3:#494d64;
+    --border:#494d64; --border-strong:#5b6078; --text:#cad3f5; --text-dim:#a5adcb; --text-faint:#8087a2;
+    --accent:#c6a0f6; --accent-dim:#ad8af8; --accent-soft:rgba(198,160,246,0.14);
+    --green:#a6da95; --green-soft:rgba(166,218,149,0.14);
+    --red:#ed8796; --red-soft:rgba(237,135,150,0.14);
+  }
+  /* Catppuccin Frappé — Subdued, muted dark */
+  [data-theme="frappe"]{
+    --bg:#303446; --surface:#292c3c; --surface-2:#414559; --surface-3:#51576d;
+    --border:#51576d; --border-strong:#626880; --text:#c6d0f5; --text-dim:#a5adce; --text-faint:#838ba7;
+    --accent:#ca9ee6; --accent-dim:#b588e8; --accent-soft:rgba(202,158,230,0.14);
+    --green:#a6d189; --green-soft:rgba(166,209,137,0.14);
+    --red:#e78284; --red-soft:rgba(231,130,132,0.14);
+  }
+  /* Catppuccin Latte — Light pastel, the light variant */
+  [data-theme="latte"]{
+    --bg:#eff1f5; --surface:#e6e9ef; --surface-2:#dce0e8; --surface-3:#ccd0da;
+    --border:#bcc0cc; --border-strong:#acb0be; --text:#4c4f69; --text-dim:#6c6f85; --text-faint:#9ca0b0;
+    --accent:#8839ef; --accent-dim:#6020c0; --accent-soft:rgba(136,57,239,0.12);
+    --green:#40a02b; --green-soft:rgba(64,160,43,0.12);
+    --red:#d20f39; --red-soft:rgba(210,15,57,0.12);
+  }
+  /* Material You — Google Chrome's own UI design system colors */
+  [data-theme="material"]{
+    --bg:#1C1B1F; --surface:#211F26; --surface-2:#2B2930; --surface-3:#36343B;
+    --border:#48464C; --border-strong:#605D66; --text:#E6E1E5; --text-dim:#ABA4AF; --text-faint:#79757F;
+    --accent:#D0BCFF; --accent-dim:#B39DDB; --accent-soft:rgba(208,188,255,0.14);
+    --green:#6EF193; --green-soft:rgba(110,241,147,0.14);
+    --red:#FFB4AB; --red-soft:rgba(255,180,171,0.14);
   }
 
   /* theme switcher */
@@ -784,12 +797,13 @@ function attachLoginHandlers(){
 
 function renderHeader(){
   const themes = [
-    {id:'dark', color:'#1B212A', label:'Dark'},
-    {id:'light', color:'#FFFFFF', label:'Light'},
-    {id:'midnight', color:'#0E1520', label:'Midnight'},
-    {id:'forest', color:'#141E19', label:'Forest'},
-    {id:'slate', color:'#1E293B', label:'Slate'},
-    {id:'rose', color:'#241418', label:'Rose'},
+    {id:'dark',     color:'#14181F', label:'Default Dark'},
+    {id:'justblack',color:'#202124', label:'Just Black (Chrome)'},
+    {id:'mocha',    color:'#1e1e2e', label:'Catppuccin Mocha'},
+    {id:'macchiato',color:'#24273a', label:'Catppuccin Macchiato'},
+    {id:'frappe',   color:'#303446', label:'Catppuccin Frappé'},
+    {id:'latte',    color:'#eff1f5', label:'Catppuccin Latte (Light)'},
+    {id:'material', color:'#1C1B1F', label:'Material You (Chrome)'},
   ];
   const dots = themes.map(t=>`<div class="theme-dot ${currentTheme===t.id?'active':''}" data-theme-pick="${t.id}" style="background:${t.color};" title="${t.label}"></div>`).join('');
   return `
@@ -966,6 +980,15 @@ function renderTimesheet(){
   const byDate = {};
   days.forEach(d=>{ byDate[fmtDate(d)]=[]; });
   we.forEach(e=>{ if(byDate[e.date]) byDate[e.date].push(e); });
+  // Sort each day's entries: latest start time first, then by creation order for entries without times
+  Object.keys(byDate).forEach(ds=>{
+    byDate[ds].sort((a,b)=>{
+      if(a.start_time && b.start_time) return b.start_time.localeCompare(a.start_time);
+      if(a.start_time) return -1;
+      if(b.start_time) return 1;
+      return 0;
+    });
+  });
 
   const grandTotal = we.reduce((a,b)=>a+b.hours,0);
   const weeklyTemplates = templates.filter(t=>!t.type||t.type==='weekly');
