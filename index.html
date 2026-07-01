@@ -586,6 +586,7 @@ function reportDateRange(){
   if(reportRange==='week'){ const s=mondayOf(today); return [fmtDate(s), fmtDate(addDays(s,6))]; }
   if(reportRange==='lastweek'){ const s=addDays(mondayOf(today),-7); return [fmtDate(s), fmtDate(addDays(s,6))]; }
   if(reportRange==='month'){ const s=new Date(today.getFullYear(),today.getMonth(),1); const e=new Date(today.getFullYear(),today.getMonth()+1,0); return [fmtDate(s), fmtDate(e)]; }
+  if(reportRange==='lastmonth'){ const s=new Date(today.getFullYear(),today.getMonth()-1,1); const e=new Date(today.getFullYear(),today.getMonth(),0); return [fmtDate(s), fmtDate(e)]; }
   return ['0000-01-01','9999-12-31'];
 }
 function reportEntries(){
@@ -609,6 +610,11 @@ function reportByUser(){
 function rangeLabelText(){
   const [s,e] = reportDateRange();
   if(reportRange==='all') return 'All time';
+  if(reportRange==='lastmonth'){
+    const today=new Date(); const s=new Date(today.getFullYear(),today.getMonth()-1,1); const e=new Date(today.getFullYear(),today.getMonth(),0);
+    const fmt=(d)=>{ const [y,mo,da]=fmtDate(d).split('-'); return da+'/'+mo+'/'+y; };
+    return fmt(fmtDate(s))+' - '+fmt(fmtDate(e));
+  }
   const fmt=(d)=>{ const [y,mo,da]=d.split('-'); return da+'/'+mo+'/'+y; };
   return fmt(s)+' - '+fmt(e);
 }
@@ -1071,7 +1077,7 @@ function renderReports(){
     const proj=projectById(r.projectId); const pct = total?Math.round((r.hours/total)*1000)/10:0;
     return `<div class="bar-row"><div class="bar-label"><span class="proj-dot" style="background:${proj?proj.color:'#888'}"></span>${escapeHtml(proj?proj.name:'Unknown')}</div><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${proj?proj.color:'#888'}"></div></div><div class="bar-amt">${hoursToHM(r.hours)} · ${pct}%</div></div>`;
   }).join('') : `<div class="empty-state">No entries in this range yet.</div>`;
-  const ranges = [{key:'week',label:'This week'},{key:'lastweek',label:'Last week'},{key:'month',label:'This month'},{key:'all',label:'All time'}];
+  const ranges = [{key:'week',label:'This week'},{key:'lastweek',label:'Last week'},{key:'month',label:'This month'},{key:'lastmonth',label:'Last month'},{key:'all',label:'All time'}];
   const pills = ranges.map(r=>`<button class="pill ${reportRange===r.key?'active':''}" data-range="${r.key}">${r.label}</button>`).join('');
   const adminFilter = profile.is_admin ? `
     <select class="row-select" id="teamFilterReports" style="max-width:180px;">
@@ -1198,7 +1204,7 @@ function renderTeam(){
     const pct = total?Math.round((r.hours/total)*1000)/10:0;
     return `<div class="bar-row"><div class="bar-label"><div class="avatar" style="width:20px;height:20px;font-size:9px;">${initials(p?p.email:'??')}</div>${escapeHtml(p?p.email:'Unknown')}</div><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:var(--accent)"></div></div><div class="bar-amt">${hoursToHM(r.hours)} · ${pct}%</div></div>`;
   }).join('') : `<div class="empty-state">No team entries in this range yet.</div>`;
-  const ranges = [{key:'week',label:'This week'},{key:'lastweek',label:'Last week'},{key:'month',label:'This month'},{key:'all',label:'All time'}];
+  const ranges = [{key:'week',label:'This week'},{key:'lastweek',label:'Last week'},{key:'month',label:'This month'},{key:'lastmonth',label:'Last month'},{key:'all',label:'All time'}];
   const pills = ranges.map(r=>`<button class="pill ${reportRange===r.key?'active':''}" data-range="${r.key}">${r.label}</button>`).join('');
   return `
   <div class="card">
