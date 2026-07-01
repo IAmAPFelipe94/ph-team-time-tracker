@@ -18,6 +18,51 @@
     --red:#E2685A; --red-soft:rgba(226,104,90,0.14);
     --radius:8px;
   }
+  [data-theme="light"]{
+    --bg:#F4F5F7; --surface:#FFFFFF; --surface-2:#F0F1F3; --surface-3:#E4E6EA;
+    --border:#DDE0E6; --border-strong:#C4C8D0; --text:#1A1D23; --text-dim:#5A6072; --text-faint:#9CA3AF;
+    --accent:#D4820A; --accent-dim:#B36A00; --accent-soft:rgba(212,130,10,0.12);
+    --green:#1E8A5C; --green-soft:rgba(30,138,92,0.12);
+    --red:#C0392B; --red-soft:rgba(192,57,43,0.12);
+  }
+  [data-theme="midnight"]{
+    --bg:#070B12; --surface:#0E1520; --surface-2:#131C2B; --surface-3:#1A2540;
+    --border:#1E2D45; --border-strong:#2A3F60; --text:#CDD6F4; --text-dim:#7E90B0; --text-faint:#4A5568;
+    --accent:#89B4FA; --accent-dim:#5A8EF5; --accent-soft:rgba(137,180,250,0.14);
+    --green:#A6E3A1; --green-soft:rgba(166,227,161,0.14);
+    --red:#F38BA8; --red-soft:rgba(243,139,168,0.14);
+  }
+  [data-theme="forest"]{
+    --bg:#0E1512; --surface:#141E19; --surface-2:#1B2820; --surface-3:#22342A;
+    --border:#273D2F; --border-strong:#38554A; --text:#D4E6D0; --text-dim:#7AA882; --text-faint:#4A6650;
+    --accent:#A8D5A2; --accent-dim:#78B572; --accent-soft:rgba(168,213,162,0.14);
+    --green:#69D08A; --green-soft:rgba(105,208,138,0.14);
+    --red:#F28B82; --red-soft:rgba(242,139,130,0.14);
+  }
+  [data-theme="slate"]{
+    --bg:#0F172A; --surface:#1E293B; --surface-2:#263346; --surface-3:#2E3F56;
+    --border:#334155; --border-strong:#475569; --text:#E2E8F0; --text-dim:#94A3B8; --text-faint:#64748B;
+    --accent:#818CF8; --accent-dim:#6366F1; --accent-soft:rgba(129,140,248,0.14);
+    --green:#34D399; --green-soft:rgba(52,211,153,0.14);
+    --red:#F87171; --red-soft:rgba(248,113,113,0.14);
+  }
+  [data-theme="rose"]{
+    --bg:#1A0F12; --surface:#241418; --surface-2:#2E1A1F; --surface-3:#3A2028;
+    --border:#4A2830; --border-strong:#623540; --text:#F5D6DC; --text-dim:#B8848E; --text-faint:#7A5058;
+    --accent:#F9A8D4; --accent-dim:#F472B6; --accent-soft:rgba(249,168,212,0.14);
+    --green:#86EFAC; --green-soft:rgba(134,239,172,0.14);
+    --red:#FCA5A5; --red-soft:rgba(252,165,165,0.14);
+  }
+
+  /* theme switcher */
+  .theme-switcher{display:flex;align-items:center;gap:6px;}
+  .theme-dot{
+    width:18px;height:18px;border-radius:50%;cursor:pointer;border:2px solid transparent;
+    transition:border-color .15s, transform .1s;flex-shrink:0;
+  }
+  .theme-dot:hover{transform:scale(1.15);}
+  .theme-dot.active{border-color:var(--text);}
+
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;}
   .mono{font-family:'JetBrains Mono',monospace;}
@@ -211,9 +256,17 @@ let loginNote = '';
 let loginNoteType = '';
 let selectedTemplateId = null;
 let teamUserFilter = 'all';
-let editingEntryId = null;   // entry being edited inline
-let addingToDate = null;      // date string for new-entry form
-let editForm = {};            // live field values while editing
+let editingEntryId = null;
+let addingToDate = null;
+let editForm = {};
+let currentTheme = localStorage.getItem('phtt_theme') || 'dark';
+
+function applyTheme(t){
+  currentTheme = t;
+  localStorage.setItem('phtt_theme', t);
+  document.documentElement.setAttribute('data-theme', t === 'dark' ? '' : t);
+}
+applyTheme(currentTheme);
 
 function uid(){ return Math.random().toString(36).slice(2,10); }
 function mondayOf(d){ const x=new Date(d); const day=(x.getDay()+6)%7; x.setDate(x.getDate()-day); x.setHours(0,0,0,0); return x; }
@@ -698,7 +751,7 @@ function render(){
   app.innerHTML = `
     ${renderHeader()}
     ${renderPunchBar()}
-    ${activeTab==='timesheet' ? renderTimesheet() : activeTab==='reports' ? renderReports() : activeTab==='projects' ? renderProjects() : renderTeam()}
+    ${activeTab==='timesheet' ? renderTimesheet() : activeTab==='reports' ? renderReports() : activeTab==='projects' ? renderProjects() : activeTab==='templates' ? renderTemplates() : renderTeam()}
   `;
   attachHandlers();
   if(timer){
@@ -730,6 +783,15 @@ function attachLoginHandlers(){
 }
 
 function renderHeader(){
+  const themes = [
+    {id:'dark', color:'#1B212A', label:'Dark'},
+    {id:'light', color:'#FFFFFF', label:'Light'},
+    {id:'midnight', color:'#0E1520', label:'Midnight'},
+    {id:'forest', color:'#141E19', label:'Forest'},
+    {id:'slate', color:'#1E293B', label:'Slate'},
+    {id:'rose', color:'#241418', label:'Rose'},
+  ];
+  const dots = themes.map(t=>`<div class="theme-dot ${currentTheme===t.id?'active':''}" data-theme-pick="${t.id}" style="background:${t.color};" title="${t.label}"></div>`).join('');
   return `
   <div class="app-header">
     <div class="brand">
@@ -740,13 +802,17 @@ function renderHeader(){
       <button class="tab-btn ${activeTab==='timesheet'?'active':''}" data-tab="timesheet">Timesheet</button>
       <button class="tab-btn ${activeTab==='reports'?'active':''}" data-tab="reports">Reports</button>
       <button class="tab-btn ${activeTab==='projects'?'active':''}" data-tab="projects">Projects</button>
-      ${profile.is_admin ? `<button class="tab-btn ${activeTab==='team'?'active':''}" data-tab="team">Team</button>` : ''}
+      <button class="tab-btn ${activeTab==='templates'?'active':''}" data-tab="templates">Templates</button>
+      ${profile.is_admin ? '<button class="tab-btn '+(activeTab==='team'?'active':'')+'" data-tab="team">Team</button>' : ''}
     </div>
-    <div class="user-pill">
-      <div class="avatar">${initials(profile.email)}</div>
-      <span>${escapeHtml(profile.email)}</span>
-      ${profile.is_admin ? '<span class="admin-badge">Admin</span>' : ''}
-      <button id="signOutBtn">Sign out</button>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="theme-switcher" title="Switch theme">${dots}</div>
+      <div class="user-pill">
+        <div class="avatar">${initials(profile.email)}</div>
+        <span>${escapeHtml(profile.email)}</span>
+        ${profile.is_admin ? '<span class="admin-badge">Admin</span>' : ''}
+        <button id="signOutBtn">Sign out</button>
+      </div>
     </div>
   </div>`;
 }
@@ -1061,6 +1127,46 @@ function renderProjects(){
   </div>`;
 }
 
+function renderTemplates(){
+  const weekly = templates.filter(t=>!t.type||t.type==='weekly');
+  const daily = templates.filter(t=>t.type==='daily');
+
+  const renderGroup = (list, label) => {
+    if(!list.length) return `<div class="empty-state">No ${label} templates saved yet.</div>`;
+    return list.map(t=>`
+    <div class="entry-log-row" style="align-items:center;">
+      <div class="entry-desc-col">
+        <div class="entry-desc-text">${escapeHtml(t.name)}</div>
+        <div style="font-size:11.5px;color:var(--text-faint);margin-top:2px;">${(t.rows||[]).length} row${(t.rows||[]).length!==1?'s':''}</div>
+      </div>
+      <div class="entry-proj-col" style="flex-wrap:wrap;gap:4px;">
+        ${(t.rows||[]).slice(0,4).map(r=>{
+          const p=projectById(r.projectId);
+          return '<span class="task-chip" style="font-size:10.5px;">'+
+            '<span class="proj-dot" style="background:'+(p?p.color:'#888')+'"></span>'+
+            escapeHtml(p?p.name:'Unknown')+
+          '</span>';
+        }).join('')}
+        ${(t.rows||[]).length>4?`<span style="font-size:11px;color:var(--text-faint);">+${(t.rows||[]).length-4} more</span>`:''}
+      </div>
+      <div class="entry-dur-col" style="font-size:11.5px;color:var(--text-faint);">${label}</div>
+      <div class="entry-actions">
+        <button class="btn ghost" data-deltpl="${t.id}" title="Delete template" style="color:var(--text-faint);">🗑</button>
+      </div>
+    </div>`).join('');
+  };
+
+  return `
+  <div class="card">
+    <div class="card-head"><h2>Weekly templates</h2></div>
+    ${renderGroup(weekly,'weekly')}
+  </div>
+  <div class="card">
+    <div class="card-head"><h2>Daily templates</h2></div>
+    ${renderGroup(daily,'daily')}
+  </div>`;
+}
+
 function renderTeam(){
   const byUser = reportByUser();
   const total = byUser.reduce((a,b)=>a+b.hours,0);
@@ -1091,6 +1197,20 @@ function renderTeam(){
 // ---------------- event wiring ----------------
 function attachHandlers(){
   document.querySelectorAll('.tab-btn').forEach(b=>{ b.onclick=()=>{ activeTab=b.dataset.tab; teamUserFilter='all'; render(); }; });
+
+  // Theme switcher
+  document.querySelectorAll('[data-theme-pick]').forEach(dot=>{
+    dot.onclick=()=>{ applyTheme(dot.dataset.themePick); render(); };
+  });
+
+  // Template delete (from Templates tab)
+  document.querySelectorAll('[data-deltpl]').forEach(btn=>{
+    btn.onclick=()=>{
+      const tpl = templates.find(t=>t.id===btn.dataset.deltpl);
+      if(!tpl) return;
+      if(confirm('Delete template "'+tpl.name+'"?')) deleteTemplate(tpl.id);
+    };
+  });
   const signOutBtn = document.getElementById('signOutBtn');
   if(signOutBtn) signOutBtn.onclick = signOut;
 
