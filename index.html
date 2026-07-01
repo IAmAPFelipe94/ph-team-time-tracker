@@ -637,7 +637,9 @@ function downloadFile(content, filename, mime){
 function exportDetailedCsv(){
   const re = reportEntries().slice().sort((a,b)=>b.date.localeCompare(a.date));
   const hasAdmin = profile.is_admin;
-  let csv = hasAdmin ? 'Date,Description,Project,Client,Start,End,Duration,User\n' : 'Date,Description,Project,Client,Start,End,Duration\n';
+  const range = rangeLabelText();
+  let csv = 'Detailed report\n'+range+'\n\n';
+  csv += hasAdmin ? 'Date,Description,Project,Client,Start,End,Duration,User\n' : 'Date,Description,Project,Client,Start,End,Duration\n';
   re.forEach(e=>{
     const proj = projectById(e.projectId);
     const row = [
@@ -647,27 +649,31 @@ function exportDetailedCsv(){
     if(hasAdmin) row.push(csvEsc((profileById(e.user_id)||{}).email||e.user_id));
     csv += row.join(',')+'\n';
   });
-  downloadFile(csv, 'detailed_report_'+reportRange+'.csv', 'text/csv');
+  downloadFile(csv, 'detailed_report_'+range.replace(/\//g,'-').replace(' - ','_to_')+'.csv', 'text/csv');
 }
 
 // ---- Summary CSV ----
 function exportSummaryCsv(){
   const byProj = reportByProject();
   const total = byProj.reduce((a,b)=>a+b.hours,0);
-  let csv = 'Project,Client,Duration,Percentage\n';
+  const range = rangeLabelText();
+  let csv = 'Summary report\n'+range+'\n\n';
+  csv += 'Project,Client,Duration,Percentage\n';
   byProj.forEach(r=>{
     const proj=projectById(r.projectId);
     const pct = total ? Math.round((r.hours/total)*1000)/10 : 0;
     csv += [csvEsc(proj?proj.name:'Unknown'), csvEsc(proj?proj.client:''), fmtHHMM(r.hours), pct+'%'].join(',')+'\n';
   });
-  downloadFile(csv, 'summary_report_'+reportRange+'.csv', 'text/csv');
+  downloadFile(csv, 'summary_report_'+range.replace(/\//g,'-').replace(' - ','_to_')+'.csv', 'text/csv');
 }
 
 // ---- Detailed XLSX ----
 function exportDetailedXlsx(){
   if(typeof XLSX==='undefined'){ alert('Export library is still loading, try again in a moment.'); return; }
   const re = reportEntries().slice().sort((a,b)=>b.date.localeCompare(a.date));
-  const rows = re.map(e=>{
+  const range = rangeLabelText();
+  const headerRows = [{'Date':'Detailed report'}, {'Date':range}, {'Date':''}];
+  const dataRows = re.map(e=>{
     const proj = projectById(e.projectId);
     const row = {
       Date: e.date,
@@ -682,11 +688,11 @@ function exportDetailedXlsx(){
     if(profile.is_admin) row.User = (profileById(e.user_id)||{}).email || e.user_id;
     return row;
   });
-  const ws = XLSX.utils.json_to_sheet(rows);
+  const ws = XLSX.utils.json_to_sheet([...headerRows, ...dataRows], {skipHeader: false});
   ws['!cols'] = [{wch:12},{wch:36},{wch:32},{wch:24},{wch:10},{wch:10},{wch:10},{wch:8},{wch:26}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Detailed report');
-  XLSX.writeFile(wb, 'detailed_report_'+reportRange+'.xlsx');
+  XLSX.writeFile(wb, 'detailed_report_'+range.replace(/\//g,'-').replace(' - ','_to_')+'.xlsx');
 }
 
 // ---- Summary XLSX ----
@@ -694,15 +700,14 @@ function exportSummaryXlsx(){
   if(typeof XLSX==='undefined'){ alert('Export library is still loading, try again in a moment.'); return; }
   const byProj = reportByProject();
   const total = byProj.reduce((a,b)=>a+b.hours,0);
+  const range = rangeLabelText();
 
-  // Sheet 1: Project totals
   const projRows = byProj.map(r=>{
     const proj=projectById(r.projectId);
     const pct = total ? Math.round((r.hours/total)*1000)/10 : 0;
     return { Project: proj?proj.name:'Unknown', Client: proj?proj.client:'', Duration: fmtHHMM(r.hours), Hours: Math.round(r.hours*100)/100, Percentage: pct+'%' };
   });
 
-  // Sheet 2: Description totals
   const re = reportEntries();
   const descMap = new Map();
   re.forEach(e=>{ descMap.set(e.description||'(No description)', (descMap.get(e.description||'(No description)')||0)+e.hours); });
@@ -711,18 +716,21 @@ function exportSummaryXlsx(){
     .map(([desc,hours])=>({ Description: desc, Duration: fmtHHMM(hours), Hours: Math.round(hours*100)/100, Percentage: total?Math.round((hours/total)*1000)/10+'%':'0%' }));
 
   const wb = XLSX.utils.book_new();
-  const ws1 = XLSX.utils.json_to_sheet(projRows);
+  const header1 = [{'Project':'Summary report'}, {'Project':range}, {'Project':''}];
+  const ws1 = XLSX.utils.json_to_sheet([...header1, ...projRows]);
   ws1['!cols'] = [{wch:32},{wch:24},{wch:10},{wch:8},{wch:12}];
   XLSX.utils.book_append_sheet(wb, ws1, 'By project');
-  const ws2 = XLSX.utils.json_to_sheet(descRows);
+  const header2 = [{'Description':'Summary report'}, {'Description':range}, {'Description':''}];
+  const ws2 = XLSX.utils.json_to_sheet([...header2, ...descRows]);
   ws2['!cols'] = [{wch:36},{wch:10},{wch:8},{wch:12}];
   XLSX.utils.book_append_sheet(wb, ws2, 'By description');
-  XLSX.writeFile(wb, 'summary_report_'+reportRange+'.xlsx');
+  XLSX.writeFile(wb, 'summary_report_'+range.replace(/\//g,'-').replace(' - ','_to_')+'.xlsx');
 }
 
 // ---- Detailed PDF (Clockify-style) ----
 function exportDetailedPdf(){
-  if(typeof window.jspdf==='undefined'){ alert('Export library is still loading, try again in a moment.'); return; }
+  if(typeof window.jspdf==='undefined'){ alert('PDF library is still loading — try again in a moment.'); return; }
+  try{
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:'pt', format:'a4'});
   const re = reportEntries().slice().sort((a,b)=>b.date.localeCompare(a.date));
@@ -795,6 +803,7 @@ function exportDetailedPdf(){
     doc.text('Page '+i+' of '+pageCount, pageW, 820, {align:'right'});
   }
   doc.save('detailed_report_'+reportRange+'.pdf');
+  }catch(err){ alert('PDF error: '+err.message); console.error(err); }
 }
 
 // ---- Summary PDF (Clockify-style) ----
@@ -819,7 +828,8 @@ function drawDonutDataUrl(byProj, total){
 }
 function hexToRgb(hex){ const v=hex.replace('#',''); return { r:parseInt(v.substr(0,2),16), g:parseInt(v.substr(2,2),16), b:parseInt(v.substr(4,2),16) }; }
 function exportSummaryPdf(){
-  if(typeof window.jspdf==='undefined'){ alert('Export library is still loading, try again in a moment.'); return; }
+  if(typeof window.jspdf==='undefined'){ alert('PDF library is still loading — try again in a moment.'); return; }
+  try{
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:'pt', format:'a4'});
   const byProj = reportByProject();
@@ -936,6 +946,7 @@ function exportSummaryPdf(){
     doc.text('Page '+i+' of '+pageCount, pageW, 825, {align:'right'});
   }
   doc.save('summary_report_'+reportRange+'.pdf');
+  }catch(err){ alert('PDF error: '+err.message); console.error(err); }
 }
 
 // ---------------- rendering ----------------
@@ -1262,7 +1273,7 @@ function renderReports(){
     </select>` : '';
   return `
   <div class="card">
-    <div class="card-head"><h2>Reports</h2><div class="range-pills">${pills}${adminFilter}</div></div>
+    <div class="card-head"><h2>Reports <span style="font-family:'JetBrains Mono';font-size:12px;font-weight:400;color:var(--text-faint);margin-left:8px;">${rangeLabelText()}</span></h2><div class="range-pills">${pills}${adminFilter}</div></div>
     <div class="stat-grid">
       <div class="stat-box"><div class="label">Total tracked</div><div class="value">${hoursToHM(total)}</div></div>
       <div class="stat-box"><div class="label">Entries</div><div class="value">${re.length}</div></div>
@@ -1391,7 +1402,7 @@ function renderTeam(){
   const pills = ranges.map(r=>`<button class="pill ${reportRange===r.key?'active':''}" data-range="${r.key}">${r.label}</button>`).join('');
   return `
   <div class="card">
-    <div class="card-head"><h2>Team hours</h2><div class="range-pills">${pills}</div></div>
+    <div class="card-head"><h2>Team hours <span style="font-family:'JetBrains Mono';font-size:12px;font-weight:400;color:var(--text-faint);margin-left:8px;">${rangeLabelText()}</span></h2><div class="range-pills">${pills}</div></div>
     <div class="stat-grid">
       <div class="stat-box"><div class="label">Team total</div><div class="value">${hoursToHM(total)}</div></div>
       <div class="stat-box"><div class="label">People logging time</div><div class="value">${byUser.length}</div></div>
@@ -1617,8 +1628,9 @@ function attachHandlers(){
 
   if(activeTab==='team'){
     document.querySelectorAll('[data-range]').forEach(p=>{ p.onclick=()=>{ reportRange=p.dataset.range; render(); }; });
-    const exC=document.getElementById('exportCsv'); if(exC) exC.onclick=exportCsv;
+    const exC=document.getElementById('exportCsv'); if(exC) exC.onclick=exportDetailedCsv;
     const exX=document.getElementById('exportXlsx'); if(exX) exX.onclick=exportDetailedXlsx;
+    const exDP=document.getElementById('exportDetailedPdf'); if(exDP) exDP.onclick=exportDetailedPdf;
     const exP=document.getElementById('exportSummaryPdf'); if(exP) exP.onclick=exportSummaryPdf;
   }
 }
